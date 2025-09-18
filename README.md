@@ -1,6 +1,6 @@
 # R Statistical Tests
 
-A collection of R scripts for performing common statistical tests and interactive statistical analyses.
+A collection of R scripts for performing common statistical tests and interactive statistical analyses. Updates oncoming.
 
 ---
 
