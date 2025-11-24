@@ -1,116 +1,87 @@
-# R Statistical Tests
+<div align="center">
 
-A collection of R scripts for performing common statistical tests and interactive statistical analyses. Updates oncoming.
+# 📊 Statistical Analysis in R
 
----
+Modern, script-first workflows for the most common hypothesis tests and exploratory analytics — all in pure R.
 
-## Requirements
+[![R >= 4.0](https://img.shields.io/badge/R-%3E%3D%204.0-276DC3?logo=r&logoColor=white)](#requirements) [![Made for RStudio](https://img.shields.io/badge/RStudio-friendly-75AADB?logo=rstudio&logoColor=white)](#getting-started) [![MIT License](https://img.shields.io/badge/License-MIT-black.svg)](#license) [![Contributions Welcome](https://img.shields.io/badge/PRs-welcome-4CAF50.svg)](#contributing)
 
-* **R** (version 4.0 or higher)
-* **RStudio** (recommended for interactive features)
-* Required packages: `ggplot2`, `reshape2`, `stats`
+</div>
 
 ---
 
-## Installation
+## ✨ Why This Repo
 
-1. Download or clone the repository:
-
-   ```bash
-   git clone <repository-url>
-   cd <repository-directory>
-   ```
-2. Ensure you have R installed and accessible from your command line or RStudio.
-3. Install required R packages:
-
-   ```r
-   install.packages(c("ggplot2", "reshape2"))
-   ```
+- **Single-run scripts** you can source directly into RStudio or any R console.
+- **Interactive helpers** for quick EDA, diagnostics, and reporting.
+- **Readable outputs**: tables, plots, and effect sizes ready for stakeholders.
+- **Zero packages beyond tidy staples** (`ggplot2`, `reshape2`, `stats`).
 
 ---
 
-## Scripts Overview
+## 🚀 Getting Started
 
-### 1. `Anova and Multiple Comparison test.R`
-
-Performs one-way ANOVA followed by Tukey’s HSD multiple comparison test.
-
-**Usage example:**
-
-```r
-source("Anova and Multiple Comparison test.R")
+```bash
+git clone <repository-url>
+cd <repository-directory>
 ```
 
-### 2. `Implementing a Chi Square test.R`
-
-Conducts a Chi-square test of independence on a 2×2 contingency table with visualization.
-
-**Usage example:**
-
 ```r
-source("Implementing a Chi Square test.R")
+install.packages(c("ggplot2", "reshape2"))
 ```
 
-### 3. `Linear regression with prediction and confidence intervals.R`
+> ✅ Requires R ≥ 4.0. RStudio recommended for plot panes and interactive prompts.
 
-Performs simple linear regression with prediction and confidence intervals.
+---
 
-**Usage example:**
+## 🧰 Script Gallery
 
-```r
-source("Linear regression with prediction and confidence intervals.R")
-```
+| Script | What it does | Highlights |
+| --- | --- | --- |
+| `Anova and Multiple Comparison test.R` | One-way ANOVA + Tukey HSD | Automatic assumption checks, tidy post-hoc table |
+| `Implementing a Chi Square test.R` | Chi-square test of independence | 2×2 contingency helper + visualization |
+| `Linear regression with prediction and confidence intervals.R` | Simple linear model | Prediction bands + confidence intervals |
+| `Various t.tests.R` | One-sample, paired, and two-sample t-tests | Effect sizes, Shapiro-Wilk, variance checks |
+| `Interactive Stat Tools Extended.R` | RStudio gadget-style helpers | See full menu below |
 
-### 4. `Various t.tests.R`
+---
 
-Demonstrates execution of various t-tests, including paired and one-sample t-tests, with assumption checks.
-
-**Usage example:**
-
-```r
-source("Various t.tests.R")
-```
-
-### 5. `Interactive Stat Tools Extended.R`
-
-Provides interactive versions of common small statistical analyses for use in RStudio. Includes:
-
-* **Summary statistics**: Count, mean, median, SD, IQR, min, max, missing values.
-* **Frequency table**: Counts and relative frequencies with optional bar plots.
-* **Correlation matrix**: Computes and visualizes correlation heatmaps.
-* **Proportion test**: Two-group proportion test.
-* **Normality check**: Shapiro-Wilk test, skewness, kurtosis, histogram, Q-Q plot.
-* **Outlier detection**: IQR and Z-score methods.
-* **Two-sample t-test**: With Cohen’s d effect size.
-* **Chi-square test**: For categorical associations.
-* **Simple linear regression**: With diagnostic plots.
-* **Simple logistic regression**: With odds ratios and confusion matrix.
-* **Pairwise comparisons**: Pairwise t-tests with multiple comparison correction.
-
-**Usage example:**
+## 🧪 Interactive Suite Breakdown
 
 ```r
 source("Interactive Stat Tools Extended.R")
 ```
 
----
-
-## Usage Tips
-
-* **ANOVA & Multiple Comparisons**: Replace `file.choose()` with a fixed file path for reproducibility.
-* **Chi-square Test**: Modify the contingency table to match observed frequencies.
-* **Regression Analysis**: Customize plot appearance; compare manual vs. `lm()`-based coefficients.
-* **t-tests**: Use `mu` for one-sample tests and `paired=TRUE` for paired t-tests.
-* **Interactive Tools**: Most functions print results and generate plots automatically in RStudio.
-
----
-
-## Contributing
-
-Contributions, bug reports, and enhancements are welcome. Please fork the repository, commit your changes, and submit a pull request.
+- Summary stats (count, mean, median, SD, IQR, missing values)
+- Frequency tables + optional bar plots
+- Correlation matrices with heatmaps
+- Two-proportion test with visualization
+- Normality diagnostics (Shapiro-Wilk, skewness, kurtosis, histogram, Q-Q plot)
+- Outlier detection via IQR & Z-score methods
+- Two-sample t-test with Cohen’s d
+- Chi-square association testing
+- Simple linear regression + diagnostic panels
+- Simple logistic regression (odds ratios + confusion matrix)
+- Pairwise t-tests with multiple-comparison corrections
 
 ---
 
-## License
+## 💡 Quick Usage Patterns
 
-This project is released under the MIT License. Include a copy of the license when distributing.
+- **ANOVA**: Replace `file.choose()` with a fixed CSV path for reproducibility.
+- **Chi-square**: Tweak the supplied contingency matrix to match observed counts.
+- **Regression**: Customize `ggplot2` layers to match your reporting theme.
+- **t-tests**: Use `mu` for one-sample hypotheses; set `paired = TRUE` when needed.
+- **Interactive tools**: Source once, then call helpers as needed in your session.
+
+---
+
+## 🤝 Contributing
+
+PRs, issues, and ideas are welcome! Fork the repo, create a feature branch, and open a pull request describing the change. Screenshots/GIFs of interactive tools are appreciated.
+
+---
+
+## 📄 License
+
+Released under the MIT License. Include a copy when redistributing and cite this repo if it helps your work.

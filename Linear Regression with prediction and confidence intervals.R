@@ -1,132 +1,137 @@
-NEA  <- c(-94,-57,-29,135,143,151,245,355,392,473,486,535,571,580,620,690)
-Fat_Gain <- c(4.2,3.0,3.7,2.7,3.2,3.6,2.4,1.3,3.8,1.7,1.6,2.2,1.0,0.4,2.3,1.1)
+# Linear regression workflow helper
+# --------------------------------------------
+# Provides a reusable pipeline for fitting a simple linear regression model,
+# generating diagnostics, and exporting prediction/confidence intervals.
 
-# a little EDA, before we get too serious --
-plot(NEA,Fat_Gain, pch=17, col="dark red")
-
-# How does the correlation coefficient look? --
-My_r <- cor(NEA,Fat_Gain)
-My_r
-
-# Let's find the other needed values --
-mean(NEA)
-sd(NEA)
-
-mean(Fat_Gain)
-sd(Fat_Gain)
-
-# Finding b --
-My_b <- My_r * (sd(Fat_Gain)/sd(NEA))
-My_b
-
-# Finding a --
-My_a <- mean(Fat_Gain) - My_b * mean(NEA)
-My_a
-
-# equation for the regression line --
-### Pred_y <- My_a + My_b * some_x
-
-# finding predicted y for a given x
-# all regression lines pass trhough
-# (mean_x,mean_y), so let's find y_hat
-# for mean_x and check if it equals 
-# mean_y.
-
-y_hat = My_a + My_b * mean(NEA)
-y_hat
-
-y_hat == mean(Fat_Gain)
-
-# plotting the regression line --
-abline(My_a,My_b,col="yellow",lwd=4)
-
-# using R's lm() function --
-# see "Simple Graphs in R" for details
-
-My_lm <- lm(Fat_Gain ~ NEA)  # note: y before x
-
-coef(My_lm)      # displays slope and intercept
-
-abline(My_lm, col="blue",lwd=1)  # adds regr. line
-
-fitted(My_lm)   # predicted y-values for all xs
-
-# Generating prediction intervals
-
-My_df <- data.frame(NEA,Fat_Gain)
-
-predict(My_lm, 
-        data=My_df, 
-        interval="prediction",
-        conf.level=0.95)
-
-# Generating a confidence interval for the mean 
-
-predict(My_lm, 
-        data=My_df, 
-        interval="confidence",
-        conf.level=0.95)
-
-# Plotting PI and CI lines on scatterplot
-
-#====================
-#  R function to add prediction intervals or 
-#  confidence intervals to an existing scatter 
-#  plot. To use this function, you will need 
-#  data stored in a data frame and a linear 
-#  regression model.
-#====================
-plot.add.ci <- function(x, y, 
-                        interval='prediction', 
-                        level=0.95, 
-                        regressionColor='red', ...) { 	
-  xOrder  <- order(x) 	
-  x       <- x[xOrder]   	
-  y       <- y[xOrder]         
-  fit     <- lm(y ~ x, data=data.frame(x=x, y=y)) 	
-  newX    <- data.frame(x=jitter(x)) 	
-  fitPred <- predict.lm(fit, newdata=newX, 
-                        interval=interval, 
-                        level=level, ...) 	
-  abline(lm(y ~ x), col=regressionColor) 	
-  lines(newX$x, fitPred[,2], lty=2, ...) 	
-  lines(newX$x, fitPred[,3], lty=2, ...)
+required_pkgs <- c("ggplot2", "broom")
+missing <- required_pkgs[!sapply(required_pkgs, requireNamespace, quietly = TRUE)]
+if (length(missing)) {
+  stop("Install missing packages before running the workflow: ", paste(missing, collapse = ", "))
 }
 
-plot.add.ci(My_df$NEA,My_df$Fat_Gain,
-            interval="prediction",
-            regressionColor="green")
+suppressPackageStartupMessages({
+  library(ggplot2)
+  library(broom)
+})
 
-plot.add.ci(My_df$NEA,My_df$Fat_Gain,
-            interval="confidence",
-            level=0.95,
-            regressionColor="cornflowerblue")
-
-# Finding predicted values, using your linear model
-
-# Note, if you have a linear model calle "My_lm"
-# the y-intercept is coef(My_lm)[[1]] and the
-# slope is coef(My_lm)[[2]]. 
-
-# The equation for the linear model would be:
-# y_hat=coef(My_lm)[[1]] + coef(My_lm)[[2]] * x
-
-# If you input a vector of x values in place of
-# the x variable in the above equation, R will
-# generate as many y-hat values as x values that 
-# are contained in the input vector.
-
-mr_predictor <- function(x_values_of_interest,linear_model){
-  y_hats <- coef(linear_model)[[1]] + coef(linear_model)[[2]] * x_values_of_interest
-  return(y_hats)
+prepare_regression_data <- function(data = NULL,
+                                    file = NULL,
+                                    response,
+                                    predictor) {
+  if (is.null(data) && is.null(file)) {
+    stop("Supply either `data` (data frame) or `file` (CSV path).")
+  }
+  if (!is.null(file)) {
+    data <- read.csv(file, stringsAsFactors = FALSE)
+  }
+  if (!(response %in% names(data))) stop("Response column not found.")
+  if (!(predictor %in% names(data))) stop("Predictor column not found.")
+  
+  df <- data[, c(response, predictor)]
+  names(df) <- c("response", "predictor")
+  df <- na.omit(df)
+  if (!is.numeric(df$response) || !is.numeric(df$predictor)) {
+    stop("Both response and predictor must be numeric.")
+  }
+  df
 }
 
-some_xs <- c(-50,0,100,200,300,400,500,600)
+plot_regression_fit <- function(df, model, title, save_plots, prefix) {
+  fitted_df <- augment(model)
+  fit_plot <- ggplot(fitted_df, aes(predictor, response)) +
+    geom_point(color = "#238b45") +
+    geom_line(aes(y = .fitted), color = "#08589e", linewidth = 1) +
+    labs(
+      title = paste(title, "- Linear Fit"),
+      x = "Predictor",
+      y = "Response"
+    ) +
+    theme_minimal()
+  
+  resid_plot <- ggplot(fitted_df, aes(.fitted, .resid)) +
+    geom_point(color = "#7a0177") +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    labs(
+      title = paste(title, "- Residuals vs Fitted"),
+      x = "Fitted",
+      y = "Residuals"
+    ) +
+    theme_minimal()
+  
+  qq_plot <- ggplot(fitted_df, aes(sample = .resid)) +
+    stat_qq() +
+    stat_qq_line() +
+    labs(
+      title = paste(title, "- Residual Q-Q Plot"),
+      x = "Theoretical Quantiles",
+      y = "Sample Quantiles"
+    ) +
+    theme_minimal()
+  
+  if (save_plots) {
+    ggsave(paste0(prefix, "_fit.png"), fit_plot, width = 6, height = 4, dpi = 300)
+    ggsave(paste0(prefix, "_residuals.png"), resid_plot, width = 6, height = 4, dpi = 300)
+    ggsave(paste0(prefix, "_qq.png"), qq_plot, width = 6, height = 4, dpi = 300)
+  } else {
+    print(fit_plot)
+    print(resid_plot)
+    print(qq_plot)
+  }
+}
 
-mr_predictor(some_xs,My_lm)
-points(some_xs,mr_predictor(some_xs,My_lm),
-       pch=23,
-       col="blue",
-       bg="light blue",
-       cex=1.5)
+generate_intervals <- function(model,
+                               newdata = NULL,
+                               conf.level = 0.95) {
+  if (is.null(newdata)) {
+    newdata <- data.frame(predictor = seq(min(model$model$predictor), max(model$model$predictor), length.out = 100))
+  }
+  pred_int <- predict(model, newdata = newdata, interval = "prediction", level = conf.level)
+  conf_int <- predict(model, newdata = newdata, interval = "confidence", level = conf.level)
+  cbind(newdata, pred_int, conf_int_lwr = conf_int[, "lwr"], conf_int_upr = conf_int[, "upr"])
+}
+
+run_linear_regression_workflow <- function(data = NULL,
+                                           file = NULL,
+                                           response,
+                                           predictor,
+                                           conf.level = 0.95,
+                                           save_plots = FALSE,
+                                           plot_prefix = "linear_regression",
+                                           title = "Linear Regression",
+                                           prediction_points = NULL) {
+  df <- prepare_regression_data(data = data, file = file, response = response, predictor = predictor)
+  model <- lm(response ~ predictor, data = df)
+  
+  diagnostics <- glance(model)
+  plot_regression_fit(df, model, title, save_plots, plot_prefix)
+  
+  interval_grid <- generate_intervals(model, newdata = prediction_points, conf.level = conf.level)
+  
+  list(
+    model = model,
+    diagnostics = diagnostics,
+    tidy = tidy(model),
+    intervals = interval_grid,
+    augment = augment(model)
+  )
+}
+
+predict_from_model <- function(model, new_predictor_values, conf.level = 0.95) {
+  new_df <- data.frame(predictor = new_predictor_values)
+  predict(model, newdata = new_df, interval = "prediction", level = conf.level)
+}
+
+# Example usage:
+# data <- data.frame(
+#   NEA = c(-94,-57,-29,135,143,151,245,355,392,473,486,535,571,580,620,690),
+#   Fat_Gain = c(4.2,3.0,3.7,2.7,3.2,3.6,2.4,1.3,3.8,1.7,1.6,2.2,1.0,0.4,2.3,1.1)
+# )
+# results <- run_linear_regression_workflow(
+#   data = data,
+#   response = "Fat_Gain",
+#   predictor = "NEA",
+#   save_plots = TRUE,
+#   plot_prefix = "nea_fat_gain"
+# )
+# predict_from_model(results$model, c(-50, 0, 100, 200))
 

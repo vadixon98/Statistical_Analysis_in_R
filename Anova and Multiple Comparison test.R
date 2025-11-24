@@ -1,68 +1,157 @@
-# ANOVA IN R
-# The key steps include the following:
-# 1) Entering or importing data to be analyzed.
-# 2) Creating a single vector that holds all numerical values from all categories 
-# under study.
-# 3) Creating a second vector of the same length that holds the names ofall 
-# categories under study (either nominal or ordinal data).
-# 4) Combining the above two vectors into a two---column data frame, with the 
-# second column containing the category names (this column is “a factor”).
-# 5) Graphical investigation of the data (exploratory data analysis).
-# 6) Checking assumptions.
-# 7) Fitting an ANOVA model, if assumptions are met.
-# 8) Producing an ANOVA table.
-# 9) Interpretation of ANOVA table.
-# 10) Implementation of a multiple comparison test, if the null hypothesisof
-# equal means (H0 = μ1 = μ2 = …μk) is rejected.
-# 11) Interpretation of multiple comparison test results.
+# ANOVA + Tukey workflow helper
+# --------------------------------------------
+# Source this file, then call run_anova_workflow() with your data frame or a CSV.
 
+required_pkgs <- c("ggplot2", "broom", "car", "effectsize")
+missing_pkgs <- required_pkgs[!sapply(required_pkgs, requireNamespace, quietly = TRUE)]
+if (length(missing_pkgs)) {
+  stop(
+    "Install missing packages before running the workflow: ",
+    paste(missing_pkgs, collapse = ", ")
+  )
+}
 
-# Step 1 --- Entering or importing data to be analyzed
-Rat_Chow = read.table(file.choose(),header=T)
-Rat_Chow
+suppressPackageStartupMessages({
+  library(ggplot2)
+  library(broom)
+  library(car)
+  library(effectsize)
+})
 
-# Step 2 --- Creating a single vector that holds all numerical values
-Rat_Wts = c(Rat_Chow$Chow_Only,Rat_Chow$Chow_1caf,Rat_Chow$Chow_24caf)
-Rat_Wts
+prepare_anova_data <- function(data = NULL,
+                               file = NULL,
+                               response,
+                               group) {
+  if (is.null(data) && is.null(file)) {
+    stop("Provide either a data frame via `data` or a path via `file`.")
+  }
+  if (!is.null(file)) {
+    data <- read.csv(file, stringsAsFactors = FALSE)
+  }
+  if (!(response %in% names(data))) stop("Response column not found.")
+  if (!(group %in% names(data))) stop("Group column not found.")
+  
+  df <- data[, c(response, group)]
+  names(df) <- c("response", "group")
+  df <- na.omit(df)
+  df$group <- factor(df$group)
+  if (!is.numeric(df$response)) {
+    stop("Response column must be numeric.")
+  }
+  df
+}
 
-# Step 3 --- Creating a vector of that holds all of the category names
-Access = c(rep("Caf_No",15),rep("Caf_1hr",15),rep("Caf_24hr",15))
-Access
+plot_anova_eda <- function(df, title_prefix, save_plots, prefix) {
+  box <- ggplot(df, aes(group, response, fill = group)) +
+    geom_boxplot(alpha = 0.75) +
+    geom_jitter(width = 0.1, alpha = 0.4) +
+    labs(
+      title = paste(title_prefix, "- Group Distributions"),
+      x = "Group",
+      y = "Response"
+    ) +
+    theme_minimal() +
+    guides(fill = "none")
+  
+  if (save_plots) {
+    ggsave(paste0(prefix, "_boxplot.png"), box, width = 6, height = 4, dpi = 300)
+  } else {
+    print(box)
+  }
+}
 
-# Step 4 --- Combining the above two vectors into a two---column data frame
-Rat_Study = data.frame(Rat_Wts,Access)
-Rat_Study
+plot_residuals <- function(model, title_prefix, save_plots, prefix) {
+  res_df <- data.frame(
+    fitted = fitted(model),
+    residuals = resid(model)
+  )
+  
+  res_plot <- ggplot(res_df, aes(fitted, residuals)) +
+    geom_point(color = "#2b8cbe") +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    labs(
+      title = paste(title_prefix, "- Residuals vs Fitted"),
+      x = "Fitted",
+      y = "Residuals"
+    ) +
+    theme_minimal()
+  
+  qq_plot <- ggplot(res_df, aes(sample = residuals)) +
+    stat_qq() +
+    stat_qq_line() +
+    labs(
+      title = paste(title_prefix, "- Residual Q-Q Plot"),
+      x = "Theoretical Quantiles",
+      y = "Sample Quantiles"
+    ) +
+    theme_minimal()
+  
+  if (save_plots) {
+    ggsave(paste0(prefix, "_residuals.png"), res_plot, width = 6, height = 4, dpi = 300)
+    ggsave(paste0(prefix, "_qq.png"), qq_plot, width = 6, height = 4, dpi = 300)
+  } else {
+    print(res_plot)
+    print(qq_plot)
+  }
+}
 
-# Step 5 --- Graphical investigation ofthe data (EDA)
-boxplot(Rat_Wts ~ Access, data=Rat_Study, col=c(2,3,4), main="Rat Study")
-boxplot(Rat_Wts ~ Access, data=Rat_Study,col=c("dark green","dark red","dark blue"),main="Comparison of Rat Weights")
+check_anova_assumptions <- function(df, formula, model, alpha) {
+  shapiro <- shapiro.test(residuals(model))
+  levene <- car::leveneTest(formula, data = df)
+  
+  list(
+    shapiro = list(
+      statistic = shapiro$statistic,
+      p_value = shapiro$p.value,
+      passed = shapiro$p.value > alpha
+    ),
+    levene = list(
+      statistic = levene[1, "F value"],
+      p_value = levene[1, "Pr(>F)"],
+      passed = levene[1, "Pr(>F)"] > alpha
+    )
+  )
+}
 
-# Step 6 --- Checking assumptions
-sd(Rat_Chow$Chow_Only)
-sd(Rat_Chow$Chow_1caf)
-sd(Rat_Chow$Chow_24caf) 
+run_anova_workflow <- function(data = NULL,
+                               file = NULL,
+                               response,
+                               group,
+                               alpha = 0.05,
+                               conf.level = 0.95,
+                               save_plots = FALSE,
+                               plot_prefix = "anova_diagnostics",
+                               title_prefix = "ANOVA Results") {
+  df <- prepare_anova_data(data = data, file = file, response = response, group = group)
+  formula <- as.formula("response ~ group")
+  
+  plot_anova_eda(df, title_prefix, save_plots, plot_prefix)
+  
+  model <- aov(formula, data = df)
+  assumption_checks <- check_anova_assumptions(df, formula, model, alpha)
+  
+  anova_tbl <- broom::tidy(model)
+  effect_tbl <- effectsize::eta_squared(model, ci = conf.level)
+  tukey <- TukeyHSD(model, conf.level = conf.level)
+  
+  plot_residuals(model, title_prefix, save_plots, plot_prefix)
+  
+  list(
+    assumptions = assumption_checks,
+    anova_table = anova_tbl,
+    effect_sizes = effect_tbl,
+    tukey = tukey,
+    model = model
+  )
+}
 
-# Step 7 --- Fitting an ANOVA model
-my_results = aov(Rat_Wts ~ Access, data=Rat_Study)
-
-# Step 8 --- Producing an ANOVA table
-anova(my_results)
-
-# Step 9 --- Interpretation of ANOVA table
-###################################
-# The p-value (Pr(>F)) is 3.794e-06, which is highly significant (***), so we 
-# reject the null hypothesis of equal means (H0 = µ1 = µ2 = …µk) and infer that the 
-# three samples were not drawn from a common population.
-
-# Step 10 --- Implementation of a multiple comparison test
-# Tukey multiple comparisons of means - 95% family-wise confidence level
-TukeyHSD(my_results,conf.level = 0.95)
-
-# Step 11 --- Interpretation of multiple comparison test results
-###############################################
-# The results of Tukey’s HSD multiple comparison test reveal that “Caf_No” 
-# category (or sample) has a mean that is significantly different from those of 
-# the other two categories, “Caf_1hr” (p = 0.0021763) and “Caf_24hr” 
-# (p = 0.0000025).
-# In contrast, the means of “Caf_1hr” and “Caf_24hr” are not significantly 
-# different (p = 0.0921396)
+# Example usage
+# data <- read.csv("rat_study.csv")
+# results <- run_anova_workflow(
+#   data = data,
+#   response = "weight",
+#   group = "diet",
+#   save_plots = TRUE,
+#   plot_prefix = "rat_study"
+# )
+# results$anova_table

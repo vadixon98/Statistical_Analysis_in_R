@@ -5,6 +5,40 @@ library(ggplot2)
 library(reshape2)
 library(stats)
 
+stat_tool_result <- function(result = NULL,
+                             plot = NULL,
+                             plot_path = NULL,
+                             diagnostics = NULL,
+                             extras = list()) {
+  structure(
+    c(
+      list(
+        result = result,
+        plot = plot,
+        plot_path = plot_path,
+        diagnostics = diagnostics
+      ),
+      extras
+    ),
+    class = "stat_tool_result"
+  )
+}
+
+render_plot <- function(plot_obj,
+                        path = NULL,
+                        width = 6,
+                        height = 4,
+                        ...) {
+  if (!inherits(plot_obj, "ggplot")) return(list(plot = NULL, path = NULL))
+  if (!is.null(path)) {
+    ggsave(path, plot_obj, width = width, height = height, ...)
+    cat("Saved plot to", path, "\n")
+  } else {
+    print(plot_obj)
+  }
+  invisible(list(plot = plot_obj, path = path))
+}
+
 # ---- 1. Summary statistics ------------------------------------------------
 # Computes descriptive statistics for numeric columns in a data frame
 # 
@@ -44,8 +78,8 @@ summary_stats <- function(df, cols = NULL) {
     )
   }
   # Apply summary function to each numeric column
-  res <- sapply(df[ , nums, drop=FALSE], summary_fn)
-  return(round(res, 4))
+  res <- round(sapply(df[ , nums, drop=FALSE], summary_fn), 4)
+  stat_tool_result(result = res)
 }
 
 # ---- 2. Frequency table ---------------------------------------------------
@@ -73,22 +107,20 @@ frequency_table <- function(df, column, plot = TRUE, plot_path = NULL) {
   cat("\nRelative frequencies:\n"); print(round(rel,4))
   
   # Create bar chart if requested
+  plot_info <- list(plot = NULL, path = NULL)
   if (plot) {
     plot_df <- data.frame(level=names(tbl), count=as.integer(tbl), rel=as.numeric(rel))
     p <- ggplot(plot_df, aes(x=level, y=count)) +
       geom_col() +
       labs(title=paste("Frequency of", column), x=column, y="Count") +
       theme_minimal()
-    if (!is.null(plot_path)) {
-      # Save plot to file
-      ggsave(plot_path, p, width=6, height=4)
-      cat("Saved barplot to", plot_path, "\n")
-    } else {
-      # Display plot in RStudio
-      print(p)
-    }
+    plot_info <- render_plot(p, plot_path)
   }
-  invisible(list(counts=tbl, rel_freq=rel))
+  stat_tool_result(
+    result = list(counts=tbl, rel_freq=rel),
+    plot = plot_info$plot,
+    plot_path = plot_info$path
+  )
 }
 
 # ---- 3. Correlation matrix ------------------------------------------------
@@ -114,6 +146,7 @@ correlation_matrix <- function(df, method = "pearson", plot = TRUE, plot_path = 
   print(round(corr, 3))
   
   # Create heatmap visualization
+  plot_info <- list(plot = NULL, path = NULL)
   if (plot) {
     # Reshape correlation matrix to long format for ggplot
     m <- melt(corr)
@@ -124,14 +157,9 @@ correlation_matrix <- function(df, method = "pearson", plot = TRUE, plot_path = 
       labs(title=paste("Correlation matrix (", method, ")", sep=""), x="", y="") +
       theme_minimal() +
       theme(axis.text.x=element_text(angle=45, hjust=1))  # Rotate x-axis labels
-    if (!is.null(plot_path)) {
-      ggsave(plot_path, p, width=6, height=5)
-      cat("Saved correlation heatmap to", plot_path, "\n")
-    } else {
-      print(p)
-    }
+    plot_info <- render_plot(p, plot_path, width = 6, height = 5)
   }
-  return(corr)
+  stat_tool_result(result = corr, plot = plot_info$plot, plot_path = plot_info$path)
 }
 
 # ---- 4. Proportion test ---------------------------------------------------
@@ -163,7 +191,10 @@ proportion_test <- function(df, outcome_col, group_col, correct = FALSE) {
   # Perform two-sample proportion test
   test <- prop.test(x=as.numeric(counts), n=as.numeric(totals), correct=correct)
   print(test)
-  return(test)
+  stat_tool_result(
+    result = test,
+    diagnostics = list(counts = counts, totals = totals)
+  )
 }
 
 # ---- 5. Normality check ---------------------------------------------------
@@ -212,8 +243,8 @@ normality_check <- function(df, variable, out_prefix = "normality") {
     stat_function(fun=dnorm, args=list(mean=mean_x, sd=sd_x), linetype="dashed") +
     labs(title=paste("Histogram of", variable), y="Density") +
     theme_minimal()
-  ggsave(paste0(out_prefix, "_", variable, "_hist.png"), p1, width=5, height=4)
-  cat("Saved histogram to", paste0(out_prefix, "_", variable, "_hist.png"), "\n")
+  hist_path <- paste0(out_prefix, "_", variable, "_hist.png")
+  hist_info <- render_plot(p1, hist_path, width = 5, height = 4)
   
   # Create Q-Q plot (quantile-quantile plot) to assess normality
   # Points should fall approximately on the line if data is normally distributed
@@ -221,8 +252,22 @@ normality_check <- function(df, variable, out_prefix = "normality") {
     stat_qq() + stat_qq_line() +
     labs(title=paste("Q-Q Plot of", variable)) +
     theme_minimal()
-  ggsave(paste0(out_prefix, "_", variable, "_qq.png"), qq, width=5, height=4)
-  cat("Saved Q-Q plot to", paste0(out_prefix, "_", variable, "_qq.png"), "\n")
+  qq_path <- paste0(out_prefix, "_", variable, "_qq.png")
+  qq_info <- render_plot(qq, qq_path, width = 5, height = 4)
+  
+  stat_tool_result(
+    result = list(
+      variable = variable,
+      n = n,
+      mean = mean_x,
+      sd = sd_x,
+      skewness = skew,
+      kurtosis = kurt
+    ),
+    diagnostics = list(shapiro = if (exists("sw")) sw else NULL),
+    plot = list(hist = hist_info$plot, qq = qq_info$plot),
+    plot_path = list(hist = hist_info$path, qq = qq_info$path)
+  )
 }
 
 # ---- 6. Outlier detection ------------------------------------------------
@@ -248,6 +293,7 @@ outlier_detection <- function(df, column, method = c("iqr", "zscore"), threshold
   
   outlier_idx <- NULL
   
+  diagnostics <- list(method = method, threshold = threshold)
   if (method == "iqr") {
     # IQR method: outliers are values outside Q1 - threshold*IQR and Q3 + threshold*IQR
     Q1 <- quantile(xnum, 0.25)  # First quartile (25th percentile)
@@ -258,6 +304,7 @@ outlier_detection <- function(df, column, method = c("iqr", "zscore"), threshold
     # Find outliers (using original x to preserve NA positions)
     outlier_idx <- which(x < lower | x > upper)
     cat(sprintf("IQR rule: lower=%.3f upper=%.3f\n", lower, upper))
+    diagnostics$bounds <- c(lower = lower, upper = upper)
   } else if (method == "zscore") {
     # Z-score method: outliers are values with |z| > threshold
     mu <- mean(xnum)
@@ -265,13 +312,18 @@ outlier_detection <- function(df, column, method = c("iqr", "zscore"), threshold
     z <- (x - mu)/sdv  # Calculate Z-scores (using original x to preserve NA positions)
     outlier_idx <- which(abs(z) > threshold)
     cat(sprintf("Z-score threshold: |z| > %.2f\n", threshold))
+    diagnostics$mean <- mu
+    diagnostics$sd <- sdv
   }
   
   cat(sprintf("Found %d outliers in column '%s':\n", length(outlier_idx), column))
   if (length(outlier_idx) > 0) {
     print(data.frame(index=outlier_idx, value=df[[column]][outlier_idx]))
   }
-  invisible(outlier_idx)
+  stat_tool_result(
+    result = list(index = outlier_idx, values = df[[column]][outlier_idx]),
+    diagnostics = diagnostics
+  )
 }
 
 # ---- 7. Two-sample t-test -------------------------------------------------
@@ -307,7 +359,14 @@ two_sample_ttest <- function(df, outcome, group, paired = FALSE, var.equal = FAL
   sp <- sqrt(((n1 -1)*s1^2 + (n2 -1)*s2^2)/(n1 + n2 -2))
   d <- (m1 - m2)/sp
   cat(sprintf("Cohen's d (pooled): %.3f\n", d))
-  return(test)
+  stat_tool_result(
+    result = list(test = test, effect_size = d),
+    diagnostics = list(
+      means = c(m1 = m1, m2 = m2),
+      sds = c(s1 = s1, s2 = s2),
+      ns = c(n1 = n1, n2 = n2)
+    )
+  )
 }
 
 # ---- 8. Chi-square test --------------------------------------------------
@@ -331,7 +390,17 @@ chi_square_test <- function(df, col1, col2) {
   # Perform chi-square test of independence
   test <- chisq.test(tbl)
   print(test)
-  return(test)
+  n <- sum(tbl)
+  effect <- sqrt(as.numeric(test$statistic) / (n * (min(dim(tbl)) - 1)))
+  contributions <- round((test$observed - test$expected)^2 / test$expected, 3)
+  stat_tool_result(
+    result = list(test = test, effect_size = effect),
+    diagnostics = list(
+      table = tbl,
+      standardized_residuals = test$stdres,
+      contributions = contributions
+    )
+  )
 }
 
 # ---- 9. Simple linear regression -----------------------------------------
@@ -344,7 +413,7 @@ chi_square_test <- function(df, col1, col2) {
 # 
 # Returns:
 #   Linear model object from lm() containing coefficients, residuals, fitted values, etc.
-simple_linear_regression <- function(df, response, predictor) {
+simple_linear_regression <- function(df, response, predictor, plot_path = NULL) {
   if (!(response %in% names(df)) || !(predictor %in% names(df))) stop("Columns missing")
   
   # Create formula for linear regression: response ~ predictor
@@ -362,8 +431,13 @@ simple_linear_regression <- function(df, response, predictor) {
     labs(title=paste("Residuals vs Fitted:", response, "~", predictor),
          x="Fitted", y="Residuals") +
     theme_minimal()
-  print(p)
-  return(model)
+  plot_info <- render_plot(p, plot_path)
+  stat_tool_result(
+    result = model,
+    plot = plot_info$plot,
+    plot_path = plot_info$path,
+    diagnostics = list(summary = summary(model))
+  )
 }
 
 # ----10. Simple logistic regression ---------------------------------------
@@ -376,7 +450,7 @@ simple_linear_regression <- function(df, response, predictor) {
 # 
 # Returns:
 #   Generalized linear model object from glm() with binomial family
-simple_logistic_regression <- function(df, outcome, predictor) {
+simple_logistic_regression <- function(df, outcome, predictor, threshold = 0.5) {
   if (!(outcome %in% names(df)) || !(predictor %in% names(df))) stop("Columns missing")
   if (!all(df[[outcome]] %in% c(0,1))) stop("Outcome must be coded 0/1")
   
@@ -394,11 +468,14 @@ simple_logistic_regression <- function(df, outcome, predictor) {
   # Generate predicted probabilities
   probs <- predict(model, type="response")
   
-  # Create confusion matrix using 0.5 as classification threshold
-  pred <- ifelse(probs >= 0.5, 1, 0)
+  # Create confusion matrix using supplied threshold
+  pred <- ifelse(probs >= threshold, 1, 0)
   tab <- table(Predicted=pred, Actual=df[[outcome]])
-  cat("Confusion matrix (threshold=0.5):\n"); print(tab)
-  return(model)
+  cat(sprintf("Confusion matrix (threshold=%.2f):\n", threshold)); print(tab)
+  stat_tool_result(
+    result = list(model = model, odds_ratios = OR, probabilities = probs),
+    diagnostics = list(confusion_matrix = tab, threshold = threshold)
+  )
 }
 
 # ----11. Pairwise comparisons (t-tests) -----------------------------------
@@ -424,7 +501,7 @@ pairwise_comparisons <- function(df, outcome, group, p_adjust_method = "bonferro
   # Adjustment is necessary to control family-wise error rate when making multiple comparisons
   pw <- pairwise.t.test(df[[outcome]], df[[group]], p.adjust.method = p_adjust_method)
   print(pw)
-  return(pw)
+  stat_tool_result(result = pw)
 }
 
 # ---- Example usage in RStudio --------------------------------------------

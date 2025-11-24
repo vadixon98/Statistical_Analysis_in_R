@@ -21,6 +21,36 @@ sns.set_style("whitegrid")
 plt.rcParams['figure.figsize'] = (10, 6)
 
 
+def tool_result(data=None, figure=None, plot_path=None, diagnostics=None, extras=None):
+    """
+    Standard payload returned by helper functions for consistency with the R API.
+    """
+    payload = {
+        "result": data,
+        "figure": figure,
+        "plot_path": plot_path,
+        "diagnostics": diagnostics or {}
+    }
+    if extras:
+        payload.update(extras)
+    return payload
+
+
+def render_plot(fig=None, plot_path=None, dpi=300):
+    """
+    Save or display the current Matplotlib figure and return bookkeeping info.
+    """
+    fig = fig or plt.gcf()
+    saved_path = plot_path
+    if plot_path:
+        fig.savefig(plot_path, dpi=dpi, bbox_inches='tight')
+        print(f"Saved plot to {plot_path}")
+    else:
+        plt.show()
+    plt.close(fig)
+    return fig, saved_path
+
+
 # ---- 1. Summary statistics ------------------------------------------------
 def summary_stats(df, cols=None):
     """
@@ -76,8 +106,8 @@ def summary_stats(df, cols=None):
         })
     
     # Apply summary function to each numeric column
-    res = pd.DataFrame({col: summary_fn(df[col]) for col in nums})
-    return res.round(4)
+    res = pd.DataFrame({col: summary_fn(df[col]) for col in nums}).round(4)
+    return tool_result(data=res)
 
 
 # ---- 2. Frequency table ---------------------------------------------------
@@ -110,6 +140,8 @@ def frequency_table(df, column, plot=True, plot_path=None):
     print(rel.round(4))
     
     # Create bar chart if requested
+    fig = None
+    saved_path = None
     if plot:
         plt.figure(figsize=(8, 5))
         sns.barplot(x=tbl.index.astype(str), y=tbl.values, palette='viridis')
@@ -118,17 +150,13 @@ def frequency_table(df, column, plot=True, plot_path=None):
         plt.ylabel("Count")
         plt.xticks(rotation=45, ha='right')
         plt.tight_layout()
-        
-        if plot_path is not None:
-            # Save plot to file
-            plt.savefig(plot_path, dpi=300, bbox_inches='tight')
-            print(f"Saved barplot to {plot_path}")
-        else:
-            # Display plot
-            plt.show()
-        plt.close()
+        fig, saved_path = render_plot(plot_path=plot_path)
     
-    return {'counts': tbl, 'rel_freq': rel}
+    return tool_result(
+        data={'counts': tbl, 'rel_freq': rel},
+        figure=fig,
+        plot_path=saved_path
+    )
 
 
 # ---- 3. Correlation matrix ------------------------------------------------
@@ -157,23 +185,19 @@ def correlation_matrix(df, method='pearson', plot=True, plot_path=None):
     print(corr.round(3))
     
     # Create heatmap visualization
+    fig = None
+    saved_path = None
     if plot:
         plt.figure(figsize=(10, 8))
         mask = np.triu(np.ones_like(corr, dtype=bool))  # Mask upper triangle for cleaner look
         sns.heatmap(corr, annot=True, fmt='.2f', cmap='RdBu_r', center=0,
-                   square=True, linewidths=0.5, cbar_kws={"shrink": 0.8},
-                   vmin=-1, vmax=1, mask=mask)
+                    square=True, linewidths=0.5, cbar_kws={"shrink": 0.8},
+                    vmin=-1, vmax=1, mask=mask)
         plt.title(f"Correlation matrix ({method})")
         plt.tight_layout()
-        
-        if plot_path is not None:
-            plt.savefig(plot_path, dpi=300, bbox_inches='tight')
-            print(f"Saved correlation heatmap to {plot_path}")
-        else:
-            plt.show()
-        plt.close()
+        fig, saved_path = render_plot(plot_path=plot_path)
     
-    return corr
+    return tool_result(data=corr, figure=fig, plot_path=saved_path)
 
 
 # ---- 4. Proportion test ---------------------------------------------------
@@ -233,7 +257,7 @@ def proportion_test(df, outcome_col, group_col, correct=False):
     print(f"Proportion 1 ({groups[0]}): {prop1:.4f}")
     print(f"Proportion 2 ({groups[1]}): {prop2:.4f}")
     
-    return result
+    return tool_result(data=result)
 
 
 # ---- 5. Normality check ---------------------------------------------------
@@ -302,9 +326,7 @@ def normality_check(df, variable, out_prefix="normality"):
     plt.tight_layout()
     
     hist_path = f"{out_prefix}_{variable}_hist.png"
-    plt.savefig(hist_path, dpi=300, bbox_inches='tight')
-    print(f"\nSaved histogram to {hist_path}")
-    plt.close()
+    fig_hist, hist_saved = render_plot(plot_path=hist_path)
     
     # Create Q-Q plot (quantile-quantile plot) to assess normality
     # Points should fall approximately on the line if data is normally distributed
@@ -314,9 +336,27 @@ def normality_check(df, variable, out_prefix="normality"):
     plt.tight_layout()
     
     qq_path = f"{out_prefix}_{variable}_qq.png"
-    plt.savefig(qq_path, dpi=300, bbox_inches='tight')
-    print(f"Saved Q-Q plot to {qq_path}")
-    plt.close()
+    fig_qq, qq_saved = render_plot(plot_path=qq_path)
+    
+    shapiro_diag = None
+    if 3 <= n <= 5000:
+        shapiro_diag = {"statistic": sw_stat, "p_value": sw_pvalue}
+    
+    summary = {
+        "variable": variable,
+        "n": n,
+        "mean": mean_x,
+        "sd": sd_x,
+        "skewness": skew,
+        "kurtosis": kurt
+    }
+    
+    return tool_result(
+        data=summary,
+        figure={'hist': fig_hist, 'qq': fig_qq},
+        plot_path={'hist': hist_saved, 'qq': qq_saved},
+        diagnostics={'shapiro': shapiro_diag}
+    )
 
 
 # ---- 6. Outlier detection ------------------------------------------------
@@ -345,6 +385,7 @@ def outlier_detection(df, column, method='iqr', threshold=1.5):
     
     outlier_idx = None
     
+    diagnostics = {'method': method, 'threshold': threshold}
     if method == 'iqr':
         # IQR method: outliers are values outside Q1 - threshold*IQR and Q3 + threshold*IQR
         Q1 = np.percentile(xnum, 25)  # First quartile (25th percentile)
@@ -355,6 +396,7 @@ def outlier_detection(df, column, method='iqr', threshold=1.5):
         # Find outliers (using original x to preserve NA positions)
         outlier_idx = df.index[(x < lower) | (x > upper)]
         print(f"IQR rule: lower={lower:.3f} upper={upper:.3f}")
+        diagnostics['bounds'] = {'lower': float(lower), 'upper': float(upper)}
     elif method == 'zscore':
         # Z-score method: outliers are values with |z| > threshold
         mu = np.mean(xnum)
@@ -362,6 +404,8 @@ def outlier_detection(df, column, method='iqr', threshold=1.5):
         z = (x - mu) / sdv  # Calculate Z-scores (using original x to preserve NA positions)
         outlier_idx = df.index[np.abs(z) > threshold]
         print(f"Z-score threshold: |z| > {threshold:.2f}")
+        diagnostics['mean'] = float(mu)
+        diagnostics['sd'] = float(sdv)
     else:
         raise ValueError("Method must be 'iqr' or 'zscore'")
     
@@ -373,7 +417,11 @@ def outlier_detection(df, column, method='iqr', threshold=1.5):
         })
         print(outlier_df.to_string(index=False))
     
-    return outlier_idx
+    values = df.loc[outlier_idx, column].tolist() if len(outlier_idx) > 0 else []
+    return tool_result(
+        data={'index': list(outlier_idx), 'values': values},
+        diagnostics=diagnostics
+    )
 
 
 # ---- 7. Two-sample t-test -------------------------------------------------
@@ -450,7 +498,16 @@ def two_sample_ttest(df, outcome, group, paired=False, var_equal=False):
         'confidence_interval': ci
     }
     
-    return result
+    diagnostics = {
+        'group_labels': list(groups),
+        'sd_1': s1,
+        'sd_2': s2,
+        'n_1': n1,
+        'n_2': n2,
+        'test_type': test_type
+    }
+    
+    return tool_result(data=result, diagnostics=diagnostics)
 
 
 # ---- 8. Chi-square test --------------------------------------------------
@@ -489,18 +546,31 @@ def chi_square_test(df, col1, col2):
     else:
         print("  Result: Fail to reject null hypothesis (no significant association)")
     
+    residuals = (tbl.values - expected) / np.sqrt(expected)
+    contributions = ((tbl.values - expected) ** 2) / expected
+    n = tbl.values.sum()
+    min_dim = min(tbl.shape) - 1
+    cramers_v = np.sqrt(chi2 / (n * min_dim)) if min_dim > 0 else 0
+    
     result = {
         'chi2_statistic': chi2,
         'p_value': p_value,
         'degrees_of_freedom': dof,
-        'expected_frequencies': expected
+        'expected_frequencies': expected,
+        'cramers_v': cramers_v
     }
     
-    return result
+    diagnostics = {
+        'observed': tbl.values,
+        'standardized_residuals': residuals,
+        'contributions': contributions
+    }
+    
+    return tool_result(data=result, diagnostics=diagnostics)
 
 
 # ---- 9. Simple linear regression -----------------------------------------
-def simple_linear_regression(df, response, predictor):
+def simple_linear_regression(df, response, predictor, plot_path=None):
     """
     Fits a simple linear regression model (one predictor) and provides diagnostics
     
@@ -564,8 +634,7 @@ def simple_linear_regression(df, response, predictor):
     plt.xlabel("Fitted")
     plt.ylabel("Residuals")
     plt.tight_layout()
-    plt.show()
-    plt.close()
+    fig, saved_path = render_plot(plot_path=plot_path)
     
     result = {
         'intercept': model.intercept_,
@@ -576,11 +645,25 @@ def simple_linear_regression(df, response, predictor):
         'model': model
     }
     
-    return result
+    diagnostics = {
+        'se_intercept': se_intercept,
+        'se_slope': se_slope,
+        't_intercept': t_intercept,
+        't_slope': t_slope,
+        'p_intercept': p_intercept,
+        'p_slope': p_slope
+    }
+    
+    return tool_result(
+        data=result,
+        figure=fig,
+        plot_path=saved_path,
+        diagnostics=diagnostics
+    )
 
 
 # ----10. Simple logistic regression ---------------------------------------
-def simple_logistic_regression(df, outcome, predictor):
+def simple_logistic_regression(df, outcome, predictor, threshold=0.5):
     """
     Fits a simple logistic regression model (one predictor) for binary outcomes
     
@@ -632,11 +715,11 @@ def simple_logistic_regression(df, outcome, predictor):
     # Generate predicted probabilities
     probs = model.predict_proba(X)[:, 1]
     
-    # Create confusion matrix using 0.5 as classification threshold
-    pred = (probs >= 0.5).astype(int)
+    # Create confusion matrix using provided classification threshold
+    pred = (probs >= threshold).astype(int)
     from sklearn.metrics import confusion_matrix
     tab = confusion_matrix(y, pred)
-    print("\nConfusion matrix (threshold=0.5):")
+    print(f"\nConfusion matrix (threshold={threshold:.2f}):")
     print("                Predicted")
     print("                0      1")
     print(f"Actual 0    {tab[0,0]:4d}  {tab[0,1]:4d}")
@@ -649,7 +732,13 @@ def simple_logistic_regression(df, outcome, predictor):
         'confusion_matrix': tab
     }
     
-    return result
+    diagnostics = {
+        'threshold': threshold,
+        'coefficients': model.coef_[0].tolist(),
+        'intercept': float(model.intercept_[0])
+    }
+    
+    return tool_result(data=result, diagnostics=diagnostics)
 
 
 # ----11. Pairwise comparisons (t-tests) -----------------------------------
@@ -719,7 +808,7 @@ def pairwise_comparisons(df, outcome, group, p_adjust_method='bonferroni'):
     print(f"Pairwise t-tests (p-value adjustment: {p_adjust_method}):")
     print(results_df.to_string(index=False))
     
-    return results_df
+    return tool_result(data=results_df)
 
 
 # ---- Example usage in Python/Jupyter -------------------------------------
