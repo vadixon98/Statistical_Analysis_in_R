@@ -1,0 +1,15 @@
+^.*\.Rproj$
+^\.Rproj\.user$
+^README\.md$
+^\.git$
+^\.gitignore$
+^\.DS_Store$
+^.*\.zip$
+^Interactive.*\.R$
+^Simple.*\.R$
+^Anova.*\.R$
+^Implementing.*\.R$
+^Linear.*\.R$
+^Various.*\.R$
+^.*\.py$
+
